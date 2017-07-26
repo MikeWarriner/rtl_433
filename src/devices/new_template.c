@@ -189,7 +189,7 @@ static char *csv_output_fields[] = {
  * This device is disabled by default. Enable it with -R 61 on the commandline
  */
 
-r_device template = {
+r_device xtemplate = {
     .name          = "Template decoder",
     .modulation    = OOK_PULSE_PPM_RAW,
     .short_limit   = ((56+33)/2)*4,

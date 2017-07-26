@@ -12,7 +12,7 @@
 		DECL(elv_em1000) \
 		DECL(elv_ws2000) \
 		DECL(lacrossetx) \
-		DECL(template) \
+		DECL(xtemplate) \
 		DECL(acurite_rain_gauge) \
 		DECL(acurite_th) \
 		DECL(oregon_scientific) \
@@ -68,7 +68,7 @@
 		DECL(elro_db286a) \
 		DECL(efergy_optical) \
 		DECL(hondaremote) \
-		DECL(template) \
+		DECL(xtemplate) \
 		DECL(fineoffset_XC0400) \
 		DECL(radiohead_ask) \
 		DECL(kerui) \
