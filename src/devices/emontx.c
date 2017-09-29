@@ -19,7 +19,11 @@ struct emontx {
 	uint32_t pulse;
 	uint16_t crc;
 	uint8_t postamble;
-} __attribute__((packed));
+}
+#ifndef __WINDOWS__
+__attribute__((packed))
+#endif
+;
 
 // This is the JeeLibs RF12 packet format as described at
 // http://jeelabs.org/2011/06/09/rf12-packet-format-and-design/

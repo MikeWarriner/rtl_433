@@ -156,11 +156,11 @@ static _Bool import_values(void* dst, void* src, int num_values, data_type_t typ
 	array_elementwise_import_fn import = dmt[type].array_elementwise_import;
 	if (import) {
 		for (int i = 0; i < num_values; ++i) {
-			void *copy = import(*(void**)(src + element_size * i));
+			void *copy = import(*(void**)((unsigned int)src + (unsigned int)element_size * i));
 			if (!copy) {
 				--i;
 				while (i >= 0) {
-					free(*(void**)(dst + element_size * i));
+					free(*(void**)((unsigned int)dst + (unsigned int)element_size * i));
 					--i;
 				}
 				return false;
@@ -291,7 +291,7 @@ void data_array_free(data_array_t *array) {
 	if (release) {
 		int element_size = dmt[array->type].array_element_size;
 		for (int i = 0; i < array->num_values; ++i)
-			release(*(void**)(array->values + element_size * i));
+			release(*(void**)((unsigned int)array->values + (unsigned int)element_size * i));
 	}
 	free(array->values);
 	free(array);
@@ -350,16 +350,20 @@ static void print_value(data_printer_context_t *printer_ctx, FILE *file, data_ty
 /* JSON printer */
 static void print_json_array(data_printer_context_t *printer_ctx, data_array_t *array, char *format, FILE *file) {
 	int element_size = dmt[array->type].array_element_size;
-	char buffer[element_size];
+#if __WINDOWS__
+	char *buffer = (char*)_alloca(element_size);
+#else
+	char *buffer = (char*)alloca(element_size);
+#endif
 	fprintf(file, "[");
 	for (int c = 0; c < array->num_values; ++c) {
 		if (c)
 			fprintf(file, ", ");
 		if (!dmt[array->type].array_is_boxed) {
-			memcpy(buffer, (void**)(array->values + element_size * c), element_size);
+			memcpy(buffer, (void**)((unsigned int)array->values + (unsigned int)element_size * c), element_size);
 			print_value(printer_ctx, file, array->type, buffer, format);
 		} else {
-			print_value(printer_ctx, file, array->type, *(void**)(array->values + element_size * c), format);
+			print_value(printer_ctx, file, array->type, *(void**)((unsigned int)array->values + (unsigned int)element_size * c), format);
 		}
 	}
 	fprintf(file, "]");
