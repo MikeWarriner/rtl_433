@@ -13,7 +13,7 @@
  * DSC - Digital Security Controls 433 Mhz Wireless Security Contacts
  *       doors, windows, smoke, CO2, water,
  *
- * Protcol Description available in this FCC Report for FCC ID F5300NB912
+ * Protocol Description available in this FCC Report for FCC ID F5300NB912
  *  https://apps.fcc.gov/eas/GetApplicationAttachment.html?id=100988
  *
  * General Packet Description
@@ -57,7 +57,7 @@
  *
  * The ESN in practice is 24 bits, The type + remaining 5 nybbles,
  *
- * The CRC is 8 bit, "little endian", Polynomial 0xf5, Inital value 0x3d
+ * The CRC is 8 bit, reflected (lsb first), Polynomial 0xf5, Initial value 0x3d
  *
  * CRC algorithm found with CRC reveng (reveng.sourceforge.net)
  *
@@ -66,95 +66,139 @@
  *
  */
 
-#include "rtl_433.h"
-#include "util.h"
+#include "decoder.h"
 
 #define DSC_CT_MSGLEN        5
-#define DSC_CT_CRC_POLY        0xf5
-#define DSC_CT_CRC_INIT        0x3d
 
-
-static int DSC_callback(bitbuffer_t *bitbuffer) {
-    bitrow_t *bb = bitbuffer->bb;
+static int dsc_callback(r_device *decoder, bitbuffer_t *bitbuffer)
+{
+    data_t *data;
+    uint8_t *b;
     int valid_cnt = 0;
-    char time_str[LOCAL_TIME_BUFLEN];
+    uint8_t bytes[5];
+    uint8_t status, crc;
+    uint32_t esn;
+    char status_str[3];
+    char esn_str[7];
+    int s_closed, s_event, s_tamper, s_battery_low;
+    int s_xactivity, s_xtamper1, s_xtamper2, s_exception;
 
-    if (debug_output > 1) {
+    if (decoder->verbose > 1) {
         fprintf(stderr,"Possible DSC Contact: ");
         bitbuffer_print(bitbuffer);
     }
 
     for (int row = 0; row < bitbuffer->num_rows; row++) {
-        if (debug_output > 1 && bitbuffer->bits_per_row[row] > 0 ) {
+        if (decoder->verbose > 1 && bitbuffer->bits_per_row[row] > 0 ) {
             fprintf(stderr,"row %d bit count %d\n", row,
                 bitbuffer->bits_per_row[row]);
         }
 
         // Number of bits in the packet should be 48 but due to the
         // encoding of trailing zeros is a guess based on reset_limit /
-        // long_limit (bit period).  With current values up to 10 zero
+        // long_width (bit period).  With current values up to 10 zero
         // bits could be added, so it is normal to get a 58 bit packet.
         //
         // If the limits are changed for some reason, the max number of bits
         // will need to be changed as there may be more zero bit padding
         if (bitbuffer->bits_per_row[row] < 48 ||
             bitbuffer->bits_per_row[row] > 70) {  // should be 48 at most
-            if (debug_output > 1 && bitbuffer->bits_per_row[row] > 0) {
+            if (decoder->verbose > 1 && bitbuffer->bits_per_row[row] > 0) {
             fprintf(stderr,"DSC row %d invalid bit count %d\n",
                 row, bitbuffer->bits_per_row[row]);
             }
             continue;
         }
 
+        b = bitbuffer->bb[row];
         // Validate Sync/Start bits == 1 and are in the right position
-        if (!((bb[row][0] & 0xF0) &&     // First 4 bits are start/sync bits
-              (bb[row][1] & 0x08) &&    // Another sync/start bit between
-              (bb[row][2] & 0x04) &&    // every 8 data bits
-              (bb[row][3] & 0x02) &&
-              (bb[row][4] & 0x01))) {
-            if (debug_output > 1) {
-                fprintf(stderr,
-                    "DSC Invalid start/sync bits %02x %02x %02x %02x %02x\n",
-                    bb[row][0] & 0xF0,
-                    bb[row][1] & 0x08,
-                    bb[row][2] & 0x04,
-                    bb[row][3] & 0x02,
-                    bb[row][4] & 0x01);
+        if (!((b[0] & 0xF0) &&     // First 4 bits are start/sync bits
+              (b[1] & 0x08) &&    // Another sync/start bit between
+              (b[2] & 0x04) &&    // every 8 data bits
+              (b[3] & 0x02) &&
+              (b[4] & 0x01))) {
+            if (decoder->verbose > 1) {
+                fprintf(stderr, "DSC Invalid start/sync bits ");
+                bitrow_print(b, 40);
             }
             continue;
         }
 
-        uint8_t bytes[5];
-        uint8_t status,crc;
-        uint32_t esn;
-        uint8_t crcc1, crcc2, crcc3, crcc4, crcc5, crcc6, crcc7, crcc8;
+        bytes[0] = ((b[0] & 0x0F) << 4) | ((b[1] & 0xF0) >> 4);
+        bytes[1] = ((b[1] & 0x07) << 5) | ((b[2] & 0xF8) >> 3);
+        bytes[2] = ((b[2] & 0x03) << 6) | ((b[3] & 0xFC) >> 2);
+        bytes[3] = ((b[3] & 0x01) << 7) | ((b[4] & 0xFE) >> 1);
+        bytes[4] = ((b[5]));
 
-        bytes[0] = ((bb[row][0] & 0x0F) << 4) | ((bb[row][1] & 0xF0) >> 4);
-        bytes[1] = ((bb[row][1] & 0x07) << 5) | ((bb[row][2] & 0xF8) >> 3);
-        bytes[2] = ((bb[row][2] & 0x03) << 6) | ((bb[row][3] & 0xFC) >> 2);
-        bytes[3] = ((bb[row][3] & 0x01) << 7) | ((bb[row][4] & 0xFE) >> 1);
-        bytes[4] = ((bb[row][5]));
-
-        // XXX change to debug_output
-        if (debug_output)
-            fprintf(stdout, "DSC Contact Raw Data: %02X %02X %02X %02X %02X\n",
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]);
+        // XXX change to decoder->verbose
+        if (decoder->verbose) {
+            fprintf(stdout, "DSC Contact Raw Data: ");
+            bitrow_print(bytes, 40);
+        }
 
         status = bytes[0];
         esn = (bytes[1] << 16) | (bytes[2] << 8) | bytes[3];
         crc = bytes[4];
 
-        local_time_str(0, time_str);
-
-        if (crc8le(bytes, DSC_CT_MSGLEN, DSC_CT_CRC_POLY, DSC_CT_CRC_INIT) == 0) {
-            printf("%s DSC Contact ESN: %06X, Status: %02X, CRC: %02X\n",
-                time_str, esn, status, crc);
-
-            valid_cnt++; // Have a valid packet.
-        } else if (debug_output) {
-            fprintf(stderr,"%s DSC Contact bad CRC: %06X, Status: %02X, CRC: %02X\n",
-                time_str, esn, status, crc);
+        if (crc8le(bytes, DSC_CT_MSGLEN, 0xf5, 0x3d) != 0) {
+            if (decoder->verbose)
+                fprintf(stderr,"DSC Contact bad CRC: %06X, Status: %02X, CRC: %02X\n",
+                        esn, status, crc);
+            continue;
         }
+
+        // Decode status bits:
+
+        // 0x02 = Closed/OK/Restored
+        s_closed = (status & 0x02) == 0x02;
+
+        // 0x40 = Heartbeat (not an open/close event)
+        s_event = ((status & 0x40) != 0x40);
+
+        // 0x08 Battery Low
+        s_battery_low = (status & 0x08) == 0x08;
+
+        // Tamper: 0x10 set or 0x01 unset indicate tamper
+        // 0x10 Set to tamper message type (more testing needed)
+        // 0x01 Cleared tamper status (seend during hearbeats)
+        s_tamper = ((status & 0x01) != 0x01) || ((status & 0x10) == 0x10);
+
+        // "experimental" (naming might change)
+        s_xactivity = (status & 0x20) == 0x20;
+
+        // Break out 2 tamper bits
+        s_xtamper1 = (status & 0x01) != 0x01; // 0x01 set: case closed/no tamper
+        s_xtamper2 = (status & 0x10) == 0x10; //tamper event or EOL problem
+
+        // exception/states not seen
+        // 0x80 is always set and 0x04 has never been set.
+        s_exception = ((status & 0x80) != 0x80) || ((status & 0x04) == 0x04);
+
+        sprintf(status_str, "%02x", status);
+        sprintf(esn_str, "%06x", esn);
+
+
+        data = data_make(
+                "model", "", DATA_STRING, _X("DSC-Security","DSC Contact"),
+                "id", "", DATA_INT, esn,
+                "closed", "", DATA_INT, s_closed, // @todo make bool
+                "event", "", DATA_INT, s_event, // @todo make bool
+                "tamper", "", DATA_INT, s_tamper, // @todo make bool
+                _X("battery_ok","battery_low"), "", DATA_INT, _X(!s_battery_low,s_battery_low), // @todo make bool
+                "xactivity", "", DATA_INT, s_xactivity, // @todo make bool
+
+                // Note: the following may change or be removed
+                "xtamper1", "", DATA_INT, s_xtamper1, // @todo make bool
+                "xtamper2", "", DATA_INT, s_xtamper2, // @todo make bool
+                "exception", "", DATA_INT, s_exception, // @todo make bool
+                "esn", "", DATA_STRING, esn_str, // to be removed - transitional
+                "status", "", DATA_INT, status,
+                "status_hex", "", DATA_STRING, status_str, // to be removed - once bits are output
+                "mic", "", DATA_STRING, "CRC",
+                NULL);
+        decoder_output_data(decoder, data);
+
+        valid_cnt++; // Have a valid packet.
     }
 
     if (valid_cnt) {
@@ -164,14 +208,22 @@ static int DSC_callback(bitbuffer_t *bitbuffer) {
     return 0;
 }
 
+static char *output_fields[] = {
+    "model",
+    "id",
+    "status",
+    "battery_ok",
+    "mic",
+    NULL
+};
 
 r_device DSC = {
     .name          = "DSC Security Contact",
     .modulation    = OOK_PULSE_PCM_RZ,
-    .short_limit   = 250,    // Pulse length, 250 µs
-    .long_limit    = 500,    // Bit period, 500 µs
+    .short_width   = 250,    // Pulse length, 250 µs
+    .long_width    = 500,    // Bit period, 500 µs
     .reset_limit   = 5000, // Max gap,
-    .json_callback = &DSC_callback,
-    .disabled      = 1,
-    .demod_arg     = 0,
+    .decode_fn     = &dsc_callback,
+    .disabled      = 0,
+    .fields        = output_fields,
 };

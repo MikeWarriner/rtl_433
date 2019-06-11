@@ -1,28 +1,38 @@
-#include "rtl_433.h"
-
 /*
  * Cardin S466-TX2 generic garage door remote control on 27.195 Mhz
  * Remember to set de freq right with -f 27195000
- * May be usefull for other Cardin product too
+ * May be useful for other Cardin product too
  *
  * Copyright (C) 2015 Denis Bodor
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
 
-static int cardin_callback(bitbuffer_t *bitbuffer) {
+#include "decoder.h"
+
+static int cardin_callback(r_device *decoder, bitbuffer_t *bitbuffer) {
 	bitrow_t *bb = bitbuffer->bb;
-	int i, j, k;
 	unsigned char dip[10] = {'-','-','-','-','-','-','-','-','-', '\0'};
+
+	/*
+	 * "11R"  = on-on    Right button used
+	 * "10R"  = on-off   Right button used
+	 * "01R"  = off-on   Right button used
+	 * "00L?" = off-off  Left button used or right button does the same as the left
+	 */
+	char *rbutton[4] = { "11R", "10R", "01R", "00L?" };
+	data_t *data;
 
 	// validate message as we can
 	if((bb[0][2] & 48) == 0 && bitbuffer->bits_per_row[0] == 24 && (
-				(bb[0][2] & 3) == 3 ||
-				(bb[0][2] & 9) == 9 ||
-				(bb[0][2] & 12) == 12 ||
-				(bb[0][2] & 6) == 6) ) {
+				(bb[0][2] & 0x0f) == 3 ||
+				(bb[0][2] & 0x0f) == 9 ||
+				(bb[0][2] & 0x0f) == 12 ||
+				(bb[0][2] & 0x0f) == 6) ) {
 
+/*
 		fprintf(stdout, "------------------------------\n");
 		fprintf(stdout, "protocol       = Cardin S466\n");
 		fprintf(stdout, "message        = ");
@@ -36,6 +46,7 @@ static int cardin_callback(bitbuffer_t *bitbuffer) {
 			fprintf(stdout, " ");
 		}
 		fprintf(stdout, "\n\n");
+*/
 
 		// Dip 1
 		if(bb[0][0] & 8) {
@@ -92,40 +103,35 @@ static int cardin_callback(bitbuffer_t *bitbuffer) {
 				dip[8]='+';
 		}
 
-		fprintf(stdout, "                 123456789\n");
-		fprintf(stdout, "dipswitch      = %s\n\n",dip);
+		data = data_make(
+			"model",      "",                       DATA_STRING, _X("Cardin-S466","Cardin S466"),
+			"dipswitch",  "dipswitch",              DATA_STRING, dip,
+			"rbutton",    "right button switches",  DATA_STRING, rbutton[((bb[0][2] & 15) / 3)-1],
+			NULL);
 
-		fprintf(stdout, "                 -->ON\n");
-		fprintf(stdout, "right button   = ");
-		if((bb[0][2] & 3) == 3) {
-			fprintf(stdout,                  "2 --o (this is right button)\n");
-			fprintf(stdout, "                 1 --o\n");
-		}
-		if((bb[0][2] & 9) == 9) {
-			fprintf(stdout,                  "2 --o (this is right button)\n");
-			fprintf(stdout, "                 1 o--\n");
-		}
-		if((bb[0][2] & 12) == 12) {
-			fprintf(stdout,                  "2 o-- (this is left button or two buttons on same channel)\n");
-			fprintf(stdout, "                 1 o--\n");
-		}
-		if((bb[0][2] & 6) == 6) {
-			fprintf(stdout,                  "2 o-- (this is right button)\n");
-			fprintf(stdout, "                 1 --o\n");
-		}
+		decoder_output_data(decoder, data);
 
 		return 1;
 	}
 	return 0;
 }
 
+static char *output_fields[] = {
+	"model",
+	"dipswitch",
+	"rbutton",
+	NULL
+};
+
 r_device cardin = {
 	.name           = "Cardin S466-TX2",
-	.modulation     = OOK_PULSE_PPM_RAW,
-	.short_limit    = 1212,
-	.long_limit     = 1600,
+	.modulation     = OOK_PULSE_PWM,
+	.short_width    = 730,
+	.long_width     = 1400,
+	.sync_width     = 6150,
+	.gap_limit      = 1600,
 	.reset_limit    = 32000,
-	.json_callback  = &cardin_callback,
-	.disabled       = 1,
-	.demod_arg      = 0,
+	.decode_fn      = &cardin_callback,
+	.disabled       = 0,
+	.fields         = output_fields,
 };

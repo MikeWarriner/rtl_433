@@ -1,33 +1,61 @@
-#include "rtl_433.h"
+/* Silvercrest remote decoder.
+ *
+ * Copyright (C) 2018 Benjamin Larsson
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ */
 
-static int silvercrest_callback(bitbuffer_t *bitbuffer) {
-    bitrow_t *bb = bitbuffer->bb;
-    /* FIXME validate the received message better */
-    if (bb[1][0] == 0xF8 &&
-        bb[2][0] == 0xF8 &&
-        bb[3][0] == 0xF8 &&
-        bb[4][0] == 0xF8 &&
-        bb[1][1] == 0x4d &&
-        bb[2][1] == 0x4d &&
-        bb[3][1] == 0x4d &&
-        bb[4][1] == 0x4d) {
-        /* Pretty sure this is a Silvercrest remote */
-        fprintf(stdout, "Remote button event:\n");
-        fprintf(stdout, "model = Silvercrest, %d bits\n",bitbuffer->bits_per_row[1]);
-        fprintf(stdout, "%02x %02x %02x %02x %02x\n",bb[1][0],bb[0][1],bb[0][2],bb[0][3],bb[0][4]);
+#include "decoder.h"
+
+uint8_t cmd_lu_tab[16] = {2,3,0,1,4,5,7,6,0xC,0xD,0xF,0xE,8,9,0xB,0xA};
+
+static int silvercrest_callback(r_device *decoder, bitbuffer_t *bitbuffer) {
+    uint8_t *b; // bits of a row
+    uint8_t cmd;
+    data_t *data;
+
+    if (bitbuffer->bits_per_row[1] !=33)
+        return 0;
+
+    /* select second row, first might be bad */
+    b = bitbuffer->bb[1];
+    if ((b[0] == 0x7c) && (b[1] == 0x26)) {
+        cmd = b[2] & 0xF;
+        // Validate button
+        if ((b[3]&0xF) != cmd_lu_tab[cmd])
+            return 0;
+
+
+        data = data_make(
+            "model", "", DATA_STRING, _X("Silvercrest-Remote","Silvercrest Remote Control"),
+            "button", "", DATA_INT, cmd,
+            NULL);
+
+        decoder_output_data(decoder, data);
 
         return 1;
     }
     return 0;
 }
 
+static char *output_fields[] = {
+    "model",
+    "button",
+    NULL
+};
+
 r_device silvercrest = {
     .name           = "Silvercrest Remote Control",
-    .modulation     = OOK_PULSE_PWM_RAW,
-    .short_limit    = 600,
-    .long_limit     = 5000,
-    .reset_limit    = 15000,
-    .json_callback  = &silvercrest_callback,
-    .disabled       = 1,
-    .demod_arg      = 1,	// Remove startbit
+    .modulation     = OOK_PULSE_PWM,
+    .short_width    = 264,
+    .long_width     = 744,
+    .reset_limit    = 12000,
+    .gap_limit      = 5000,
+    .decode_fn      = &silvercrest_callback,
+    .disabled       = 0,
+    .fields        = output_fields,
 };

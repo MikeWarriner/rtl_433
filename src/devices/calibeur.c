@@ -18,7 +18,7 @@
  *
  * Channel number is encoded into fractional temperature
  * Temperature is oddly arranged and offset for negative temperatures = <6543210> - 41 C
- * Allways an odd number of 1s (odd parity)
+ * Always an odd number of 1s (odd parity)
  *
  * Encoding legend:
  * f = fractional temperature + <ch no> * 10
@@ -30,22 +30,19 @@
  * LSB                 MSB
  * ffffff45 01236pHH hhhhh Encoding
 */
-#include "rtl_433.h"
-#include "util.h"
-#include "data.h"
+#include "decoder.h"
 
-//static int calibeur_rf104_callback(uint8_t bb[BITBUF_ROWS][BITBUF_COLS], int16_t bits_per_row[BITBUF_ROWS]) {
-static int calibeur_rf104_callback(bitbuffer_t *bitbuffer) {
+static int calibeur_rf104_callback(r_device *decoder, bitbuffer_t *bitbuffer) {
 	data_t *data;
-	char time_str[LOCAL_TIME_BUFLEN];
 
 	uint8_t ID;
 	float temperature;
 	float humidity;
 	bitrow_t *bb = bitbuffer->bb;
 
+	bitbuffer_invert(bitbuffer);
 	// Validate package (row [0] is empty due to sync bit)
-	if ((bitbuffer->bits_per_row[1] == 21)			// Dont waste time on a long/short package
+	if ((bitbuffer->bits_per_row[1] == 21)			// Don't waste time on a long/short package
 		&& (crc8(bb[1], 3, 0x80, 0) != 0)		// It should be odd parity
 		&& (memcmp(bb[1], bb[2], 3) == 0)	// We want at least two messages in a row
 	)
@@ -79,22 +76,20 @@ static int calibeur_rf104_callback(bitbuffer_t *bitbuffer) {
 		bits |= ((bb[1][2] & 0x08) << 1);	// [4]
 		humidity = bits;
 
-		local_time_str(0, time_str);
-		data = data_make("time",          "",            DATA_STRING, time_str,
-						"model",         "",            DATA_STRING, "Calibeur RF-104",
+		data = data_make(
+						"model",         "",            DATA_STRING, _X("Calibeur-RF104","Calibeur RF-104"),
 						"id",            "ID",          DATA_INT, ID,
 						"temperature_C", "Temperature", DATA_FORMAT, "%.1f C", DATA_DOUBLE, temperature,
 						"humidity",      "Humidity",    DATA_FORMAT, "%2.0f %%", DATA_DOUBLE, humidity,
 						"mic",           "Integrity",   DATA_STRING,    "CRC",
 						NULL);
-		data_acquired_handler(data);
+		decoder_output_data(decoder, data);
 		return 1;
 	}
 	return 0;
 }
 
 static char *output_fields[] = {
-	"time",
 	"model",
 	"id",
 	"temperature_C",
@@ -105,11 +100,13 @@ static char *output_fields[] = {
 
 r_device calibeur_RF104 = {
 	.name           = "Calibeur RF-104 Sensor",
-	.modulation     = OOK_PULSE_PWM_TERNARY,
-	.short_limit    = 1160,	// Short pulse 760µs, Startbit 1560µs, Long pulse 2240µs
-	.long_limit     = 1900,	// Maximum pulse period (long pulse + fixed gap)
+	.modulation     = OOK_PULSE_PWM,
+	.short_width    = 760,	// Short pulse 760µs
+	.long_width     = 2240,	// Long pulse 2240µs
 	.reset_limit    = 3200,	// Longest gap (2960-760µs)
-	.json_callback  = &calibeur_rf104_callback,
+	.sync_width     = 1560,	// Startbit 1560µs
+	.tolerance      = 0,	// raw mode
+	.decode_fn      = &calibeur_rf104_callback,
 	.disabled       = 0,
-	.demod_arg      = 1		// Startbit is middle bit
+	.fields         = output_fields,
 };

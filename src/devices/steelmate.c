@@ -1,7 +1,7 @@
 /* Steelmate TPMS FSK protocol
  *
- * Copyright © 2016 Benjamin Larsson
- * Copyright © 2016 John Jore
+ * Copyright (C) 2016 Benjamin Larsson
+ * Copyright (C) 2016 John Jore
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -9,7 +9,7 @@
  * (at your option) any later version.
  *
  * Packet payload: 9 bytes.
- * Bytes 2 to 9 are inverted Manchester with swaped MSB/LSB:
+ * Bytes 2 to 9 are inverted Manchester with swapped MSB/LSB:
  *
  *                               0  1  2  3  4  5  6  7  8
  *                    [00] {72} 00 00 7f 3c f0 d7 ad 8e fa
@@ -25,19 +25,15 @@
  */
 
 
-#include "rtl_433.h"
-#include "pulse_demod.h"
-#include "util.h"
+#include "decoder.h"
 
-static int steelmate_callback(bitbuffer_t *bitbuffer) {
-	//if (debug_output >= 1) {
+static int steelmate_callback(r_device *decoder, bitbuffer_t *bitbuffer) {
+	//if (decoder->verbose) {
 	//	fprintf(stdout, "Steelmate TPMS decoder\n");
 	//	bitbuffer_print(bitbuffer);
 	//	fprintf(stdout, "\n");
 	//}
 
-	char time_str[LOCAL_TIME_BUFLEN];
-	local_time_str(0, time_str);
 	bitrow_t *bb = bitbuffer->bb;
 
 	//Loop through each row of data
@@ -85,7 +81,7 @@ static int steelmate_callback(bitbuffer_t *bitbuffer) {
 		pressurePSI = (float)p1 / 2;
 		battery_mV = tmpbattery_mV * 2;
 
-		data = data_make("time", "", DATA_STRING, time_str,
+		data = data_make(
 			"type", "", DATA_STRING, "TPMS",
 			"model", "", DATA_STRING, "Steelmate",
 			"id", "", DATA_STRING, sensorIDhex,
@@ -94,7 +90,7 @@ static int steelmate_callback(bitbuffer_t *bitbuffer) {
 			"battery_mV", "", DATA_INT, battery_mV,
 			"mic", "Integrity", DATA_STRING, "CHECKSUM",
 			NULL);
-		data_acquired_handler(data);
+		decoder_output_data(decoder, data);
 
 		return 1;
 	}
@@ -104,7 +100,6 @@ static int steelmate_callback(bitbuffer_t *bitbuffer) {
 }
 
 static char *output_fields[] = {
-	"time",
 	"type",
 	"model",
 	"id",
@@ -118,10 +113,10 @@ static char *output_fields[] = {
 r_device steelmate = {
 	.name			= "Steelmate TPMS",
 	.modulation		= FSK_PULSE_MANCHESTER_ZEROBIT,
-	.short_limit	= 12*4,
-	.long_limit     = 0,
+	.short_width	= 12*4,
+	.long_width     = 0,
 	.reset_limit    = 27*4,
-	.json_callback	= &steelmate_callback,
+	.decode_fn    	= &steelmate_callback,
 	.disabled		= 0,
 	.fields			= output_fields,
 };
