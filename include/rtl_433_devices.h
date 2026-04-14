@@ -326,6 +326,7 @@
     DECL(continental_car_remote) \
     DECL(code_alarm_frdpc2000_car_remote) \
     DECL(rfm69_lowpowerlab_moteino) \
+    DECL(oil_watchman_advanced_me) \
     /* Add new decoders here. */
 
 #define DECL(name) extern r_device name;
