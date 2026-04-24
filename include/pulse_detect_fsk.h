@@ -38,12 +38,19 @@ typedef struct {
     int16_t minn;
     int16_t midd;
     int skip_samples;
+    int16_t mm_decay; ///< Min/max tracker decay per sample (default 10, scaled for sample rate)
 } pulse_detect_fsk_t;
 
 /// Init/clear Demodulate Frequency Shift Keying (FSK) state.
 ///
 /// @param s Internal state
 void pulse_detect_fsk_init(pulse_detect_fsk_t *s);
+
+/// Set sample rate to scale FSK detector parameters.
+///
+/// @param s Internal state
+/// @param sample_rate Sample rate in Hz
+void pulse_detect_fsk_set_sample_rate(pulse_detect_fsk_t *s, uint32_t sample_rate);
 
 /// Demodulate Frequency Shift Keying (FSK) sample by sample.
 ///

@@ -526,12 +526,35 @@ static void sdr_callback(unsigned char *iq_buf, uint32_t len, void *ctx)
             fpdm = FSK_PULSE_DETECT_OLD;
     }
 
+    // Decimate IQ data before FM demodulation when sample rate is high.
+    // At >500 kHz the FM demodulator's lowpass filter introduces phase
+    // distortion that corrupts narrowband FSK bit timing.  Decimating
+    // the IQ stream to ~250 kHz first gives results equivalent to a
+    // native 250 kHz capture.
+    unsigned effective_rate = cfg->samp_rate;
+    if (demod->sample_size == 2 && cfg->samp_rate > 500000 && process_frame) {
+        unsigned decim = (cfg->samp_rate + 249999) / 250000;
+        unsigned out = 0;
+        uint8_t *p = (uint8_t *)iq_buf;
+        for (unsigned i = 0; i < n_samples; i += decim) {
+            p[out * 2]     = p[i * 2];
+            p[out * 2 + 1] = p[i * 2 + 1];
+            out++;
+        }
+        // Also decimate the AM buffer which was already computed
+        for (unsigned i = 0, j = 0; i < n_samples; i += decim, j++) {
+            demod->am_buf[j] = demod->am_buf[i];
+        }
+        n_samples = out;
+        effective_rate = cfg->samp_rate / decim;
+    }
+
     if (demod->enable_FM_demod && process_frame) {
         float low_pass = demod->low_pass != 0.0f ? demod->low_pass : fpdm ? 0.2f : 0.1f;
         if (demod->sample_size == 2) { // CU8
-            baseband_demod_FM(&demod->demod_FM_state, iq_buf, demod->buf.fm, n_samples, cfg->samp_rate, low_pass);
+            baseband_demod_FM(&demod->demod_FM_state, iq_buf, demod->buf.fm, n_samples, effective_rate, low_pass);
         } else { // CS16
-            baseband_demod_FM_cs16(&demod->demod_FM_state, (int16_t *)iq_buf, demod->buf.fm, n_samples, cfg->samp_rate, low_pass);
+            baseband_demod_FM_cs16(&demod->demod_FM_state, (int16_t *)iq_buf, demod->buf.fm, n_samples, effective_rate, low_pass);
         }
     }
 
@@ -560,7 +583,7 @@ static void sdr_callback(unsigned char *iq_buf, uint32_t len, void *ctx)
         }
         while (package_type && process_frame) {
             int p_events = 0; // Sensor events successfully detected per package
-            package_type = pulse_detect_package(demod->pulse_detect, demod->am_buf, demod->buf.fm, n_samples, cfg->samp_rate, cfg->input_pos, &demod->pulse_data, &demod->fsk_pulse_data, fpdm);
+            package_type = pulse_detect_package(demod->pulse_detect, demod->am_buf, demod->buf.fm, n_samples, effective_rate, cfg->input_pos, &demod->pulse_data, &demod->fsk_pulse_data, fpdm);
             if (package_type) {
                 // new package: set a first frame start if we are not tracking one already
                 if (!demod->frame_start_ago)

@@ -29,6 +29,20 @@ void pulse_detect_fsk_init(pulse_detect_fsk_t *s)
     s->var_test_max = INT16_MIN;
     s->var_test_min = INT16_MAX;
     s->skip_samples = 40;
+    s->mm_decay     = 10; // default, tuned for 250 kHz
+}
+
+void pulse_detect_fsk_set_sample_rate(pulse_detect_fsk_t *s, uint32_t sample_rate)
+{
+    // Scale the minmax tracker decay so it behaves consistently
+    // across sample rates. The default (10) is tuned for 250 kHz.
+    // At higher rates, decay per sample must be proportionally slower
+    // to avoid collapsing mid-bit.
+    if (sample_rate > 250000) {
+        s->mm_decay = MAX(10 * 250000 / (int)sample_rate, 1);
+    }
+    // At higher sample rates, also skip more initial samples
+    s->skip_samples = 40 * sample_rate / 250000;
 }
 
 void pulse_detect_fsk_classic(pulse_detect_fsk_t *s, int16_t fm_n, pulse_data_t *fsk_pulses)
@@ -167,10 +181,10 @@ void pulse_detect_fsk_minmax(pulse_detect_fsk_t *s, int16_t fm_n, pulse_data_t *
         s->var_test_min = MIN(fm_n, s->var_test_min);
         mid = (s->var_test_max + s->var_test_min) / 2;
         if (fm_n > mid) {
-            s->var_test_max -= 10;
+            s->var_test_max -= s->mm_decay;
         }
         if (fm_n < mid) {
-            s->var_test_min += 10;
+            s->var_test_min += s->mm_decay;
         }
 
         s->fsk_pulse_length += 1;

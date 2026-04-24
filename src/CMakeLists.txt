@@ -215,6 +215,7 @@ add_library(r_433 STATIC
     devices/oil_watchman.c
     devices/oil_watchman_advanced.c
     devices/oil_watchman_advanced_me.c
+    devices/oil_watchman_sonic_pro.c
     devices/opus_xt300.c
     devices/oregon_scientific.c
     devices/oregon_scientific_sl109h.c

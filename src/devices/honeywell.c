@@ -39,6 +39,7 @@ Data layout:
 - S: 16bit CRC
 
 */
+int crc_calculated=0;
 static int honeywell_decode(r_device *decoder, bitbuffer_t *bitbuffer)
 {
     // full preamble is 0xFFFE

@@ -241,6 +241,7 @@ int pulse_detect_package(pulse_detect_t *pulse_detect, int16_t const *envelope_d
                     s->pulse_length = 0;
                     s->max_pulse = 0;
                     pulse_detect_fsk_init(&s->pulse_detect_fsk);
+                    pulse_detect_fsk_set_sample_rate(&s->pulse_detect_fsk, samp_rate);
                     s->ook_state = PD_OOK_STATE_PULSE;
                 }
                 else {    // We are still idle..
